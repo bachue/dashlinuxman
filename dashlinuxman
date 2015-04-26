@@ -1,0 +1,109 @@
+#!/usr/bin/env ruby
+
+require 'rubygems'
+require 'bundler'
+require 'shellwords'
+require 'tempfile'
+require 'base64'
+require 'fileutils'
+
+trap('INT') { exit! }
+trap('HUP') { exit! }
+
+begin
+  ENV["BUNDLE_GEMFILE"] = File.expand_path 'Gemfile', __dir__
+  Bundler.setup
+rescue Bundler::GemNotFound
+  fail "Bundler couldn\'t find some gems.\nDid you run `bundle install`?"
+end
+Bundler.require :default
+
+def usage
+  puts "Usage: #$0 [login-user@]remote-linux-server[:port] target-dir"
+end
+
+def parse_arg remote
+  if /\A((\w+)@)?([^:]+)(:(\d+))?\z/ =~ remote
+    user, host, port = $2, $3, $5
+    user ||= ENV['USER']
+    port ||= 22
+    return user, host, port.to_i
+  else
+    usage
+    exit!
+  end
+end
+
+def writetmp content, prefix, suffix, options = {}
+  file = Tempfile.new [prefix, suffix], options
+  file.write content
+  file
+end
+
+def cmd ssh, cmd
+  stdout, stderr = '', ''
+  ssh.exec! cmd do |_, stream, data|
+    if stream == :stdout then stdout << data
+    elsif stream == :stderr then stderr << data
+    end
+  end
+  raise stderr if stdout.empty? && !stderr.empty?
+  stdout.strip
+end
+
+def man_w ssh
+  cmd ssh, 'man -w'
+end
+
+def filter_empty ssh, path
+  ssh.exec! ['ls', path].shelljoin do |_, stream, data|
+    return true if stream == :stdout
+  end
+  false
+end
+
+def download ssh, path
+  tmp = cmd ssh, 'mktemp'
+  cd_cmd = ['cd', path].shelljoin
+  tar_cmd = ['tar', '--hard-dereference', '--dereference', '-czf', tmp, '.'].shelljoin
+  ssh.exec! [cd_cmd, tar_cmd].join ' && '
+  content = cmd ssh, ['base64', '-w', '0', tmp].shelljoin
+  ssh.exec ['rm', tmp].shelljoin
+  writetmp Base64.strict_decode64(content), 'man', '.tar.gz', encoding: 'ascii-8bit'
+end
+
+def extract_to path, file
+  FileUtils.rm_rf path
+  FileUtils.mkdir_p path
+  system 'tar', '-xvf', file.path, '-C', path
+ensure
+  file.close!
+end
+
+def add_label path
+  list = Dir["#{path}/**/*"].select { |path| File.file? path }
+  list.each do |file|
+    dirname, basename = File.dirname(file), File.basename(file)
+    unless basename.start_with? 'linux.'
+      FileUtils.mv "#{dirname}/#{basename}", "#{dirname}/linux.#{basename}", force: true
+    end
+  end
+end
+
+remote, target = ARGV
+
+if remote && target && ARGV.size == 2
+  user, host, port = parse_arg remote
+  Net::SSH.start(host, user, port: port) do |ssh|
+    stdout = man_w ssh
+    tmpfiles = stdout.split(':').
+                      select { |path| filter_empty ssh, path }.
+                      each_with_object({}) { |path, hash| hash[path] = download ssh, path }
+    tmpfiles.each do |path, file|
+      extract_to target, file
+      add_label target
+    end
+  end
+else
+  usage
+end
