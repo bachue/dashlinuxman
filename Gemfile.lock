@@ -1,25 +1,8 @@
 GEM
   remote: https://rubygems.org/
   specs:
-    byebug (4.0.5)
-      columnize (= 0.9.0)
-    coderay (1.1.0)
-    columnize (0.9.0)
     highline (1.7.2)
-    method_source (0.8.2)
     net-ssh (2.9.2)
-    pry (0.10.1)
-      coderay (~> 1.1.0)
-      method_source (~> 0.8.1)
-      slop (~> 3.4)
-    pry-byebug (3.1.0)
-      byebug (~> 4.0)
-      pry (~> 0.10)
-    pry-doc (0.6.0)
-      pry (~> 0.9)
-      yard (~> 0.8)
-    slop (3.6.0)
-    yard (0.8.7.6)
 
 PLATFORMS
   ruby
@@ -27,6 +10,3 @@ PLATFORMS
 DEPENDENCIES
   highline
   net-ssh
-  pry
-  pry-byebug
-  pry-doc
